@@ -88,6 +88,7 @@ class RollingCurl
      * Requests currently being processed by curl
      */
     private $activeRequests = array();
+    private $requestsList = array();
 
     /**
      * @var Request[]
@@ -230,6 +231,7 @@ class RollingCurl
             curl_setopt_array($ch, $options);
             curl_multi_add_handle($this->master, $ch);
             $this->activeRequests[(int) $ch] = $request;
+            array_push($this->requestsList, $ch);
         }
 
         $active = null;
@@ -268,6 +270,7 @@ class RollingCurl
                     curl_setopt_array($ch, $options);
                     curl_multi_add_handle($this->master, $ch);
                     $this->activeRequests[(int) $ch] = $nextRequest;
+                    array_push($this->requestsList, $ch);
                 }
 
                 // remove the curl handle that just completed
@@ -582,7 +585,7 @@ class RollingCurl
     }
     public function cancelRequests()
     {
-        foreach ($this->activeRequests as $handler) {
+        foreach ($this->requestsList as $handler) {
             curl_multi_remove_handle($this->master, $handler);
         }
         $this->activeRequests = array();
