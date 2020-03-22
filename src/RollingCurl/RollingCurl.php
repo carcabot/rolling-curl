@@ -582,9 +582,10 @@ class RollingCurl
     }
     public function cancelRequests()
     {
-        foreach ($this->getNextPendingRequests(0) as $handler) {
+        foreach ($this->activeRequests as $handler) {
             curl_multi_remove_handle($this->master, $handler);
         }
+        $this->activeRequests = array();
 
         return true;
     }
