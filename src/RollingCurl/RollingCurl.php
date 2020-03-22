@@ -105,6 +105,7 @@ class RollingCurl
      */
     private $completedRequestCount = 0;
 
+    private $master;
 
     /**
      * Add a request to the request queue
@@ -209,9 +210,9 @@ class RollingCurl
     public function execute()
     {
 
-        $master = curl_multi_init();
-        foreach ($this->multicurlOptions AS $multiOption => $multiValue) {
-            curl_multi_setopt($master, $multiOption, $multiValue);
+        $this->master = curl_multi_init();
+        foreach ($this->multicurlOptions as $multiOption => $multiValue) {
+            curl_multi_setopt($this->master, $multiOption, $multiValue);
         }
 
         // start the first batch of requests
@@ -227,7 +228,7 @@ class RollingCurl
             $ch      = curl_init();
             $options = $this->prepareRequestOptions($request);
             curl_setopt_array($ch, $options);
-            curl_multi_add_handle($master, $ch);
+            curl_multi_add_handle($this->master, $ch);
             $this->activeRequests[(int) $ch] = $request;
         }
 
@@ -240,9 +241,9 @@ class RollingCurl
         do {
 
             // ensure we're running
-            $status = curl_multi_exec($master, $active);
+            $status = curl_multi_exec($this->master, $active);
             // see if there is anything to read
-            while ($transfer = curl_multi_info_read($master)) {
+            while ($transfer = curl_multi_info_read($this->master)) {
 
                 // get the request object back and put the curl response into it
                 $key     = (int) $transfer['handle'];
@@ -265,12 +266,12 @@ class RollingCurl
                     $ch      = curl_init();
                     $options = $this->prepareRequestOptions($nextRequest);
                     curl_setopt_array($ch, $options);
-                    curl_multi_add_handle($master, $ch);
+                    curl_multi_add_handle($this->master, $ch);
                     $this->activeRequests[(int) $ch] = $nextRequest;
                 }
 
                 // remove the curl handle that just completed
-                curl_multi_remove_handle($master, $transfer['handle']);
+                curl_multi_remove_handle($this->master, $transfer['handle']);
 
                 // if there is a callback, run it
                 if (is_callable($this->callback)) {
@@ -279,8 +280,7 @@ class RollingCurl
                 }
 
                 // if something was requeued, this will get it running/update our loop check values
-                $status = curl_multi_exec($master, $active);
-
+                $status = curl_multi_exec($this->master, $active);
             }
 
             // Error detection -- this is very, very rare
@@ -304,15 +304,14 @@ class RollingCurl
             }
 
             // Block until *something* happens to avoid burning CPU cycles for naught
-            while(0 == curl_multi_select($master, $selectTimeout) && $idleCallback) {
+            while (0 == curl_multi_select($this->master, $selectTimeout) && $idleCallback) {
                 $idleCallback($this);
             }
 
             // see if we're done yet or not
         } while ($status === CURLM_CALL_MULTI_PERFORM || $active);
 
-        curl_multi_close($master);
-
+        curl_multi_close($this->master);
     }
 
 
@@ -581,7 +580,14 @@ class RollingCurl
         }
         return $requests;
     }
+    public function cancelRequests()
+    {
+        foreach ($this->getNextPendingRequests(0) as $handler) {
+            curl_multi_remove_handle($this->master, $handler);
+        }
 
+        return true;
+    }
     /**
      * Get the next pending request, or return null
      *
@@ -614,7 +620,7 @@ class RollingCurl
      * @param bool $useArray count the completedRequests array is true. Otherwise use the global counter.
      * @return int
      */
-    public function countCompleted($useArray=false)
+    public function countCompleted($useArray = false)
     {
         return $useArray ? count($this->completedRequests) : $this->completedRequestCount;
     }
@@ -650,5 +656,4 @@ class RollingCurl
         gc_collect_cycles();
         return $this;
     }
-
 }
